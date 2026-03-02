@@ -201,6 +201,19 @@
   <p class="subtitle">Rental property cash flow analysis — escape the matrix edition 🏠</p>
 
   <div class="card">
+    <h2>Import from Zillow</h2>
+    <div style="display:flex;gap:0.75rem;align-items:end">
+      <div class="field" style="flex:1">
+        <label>Zillow Listing URL</label>
+        <input type="text" id="zillow-url" placeholder="https://www.zillow.com/homedetails/...">
+      </div>
+      <button class="analyze-btn" style="width:auto;margin:0;padding:0.5rem 1.25rem;font-size:0.85rem" onclick="fetchZillow()" id="fetch-btn">Fetch</button>
+    </div>
+    <div id="import-status" style="margin-top:0.75rem;font-size:0.8rem;display:none"></div>
+    <div id="property-summary" style="margin-top:1rem;display:none"></div>
+  </div>
+
+  <div class="card">
     <h2>Property Details</h2>
     <div class="form-grid">
       <div class="field">
@@ -273,6 +286,164 @@
 </div>
 
 <script>
+// ── Zillow Import ──
+async function fetchZillow() {
+  const url = document.getElementById('zillow-url').value.trim();
+  const btn = document.getElementById('fetch-btn');
+  if (!url) return showImportStatus('Enter a Zillow URL above', 'warn');
+  if (!url.includes('zillow.com/homedetails')) return showImportStatus('Paste a Zillow listing URL (zillow.com/homedetails/...)', 'warn');
+
+  btn.disabled = true; btn.textContent = 'Fetching...';
+  showImportStatus('Fetching listing data — this may take a few seconds...', 'loading');
+
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error(`Proxy error (${resp.status})`);
+    const data = await resp.json();
+    if (!data.contents) throw new Error('Empty response');
+
+    const info = extractPropertyData(data.contents);
+    if (!info.price) throw new Error('Could not extract listing price — Zillow may have blocked the request. Enter details manually below.');
+
+    populateFromZillow(info);
+    showPropertySummary(info);
+    showImportStatus(`Imported — review the auto-filled values below and adjust as needed`, 'success');
+  } catch (e) {
+    showImportStatus(`Import failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Fetch';
+  }
+}
+
+function extractPropertyData(html) {
+  const get = (...patterns) => {
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  };
+
+  const price = parseInt((get(/"price":(\d+)/, /"listPrice":(\d+)/) || '0'));
+  const rentZestimate = parseInt(get(/"rentZestimate":(\d+)/) || '0');
+  const bedrooms = parseInt(get(/"bedrooms":(\d+)/) || '0');
+  const bathrooms = parseInt(get(/"bathrooms":(\d+)/) || '0');
+  const taxAnnual = parseInt(get(/"taxAnnualAmount":(\d+)/) || '0');
+  const homeType = get(/"homeType":"([^"]+)"/) || '';
+  const streetAddress = get(/"streetAddress":"([^"]+)"/) || '';
+  const city = get(/"city":"([^"]+)"/) || '';
+  const state = get(/"state":"([^"]+)"/) || '';
+  const zipcode = get(/"zipcode":"([^"]+)"/) || '';
+  const description = (get(/"description":"((?:[^"\\]|\\.)*)"/) || '').replace(/\\n/g, ' ').replace(/\\"/g, '"');
+  const livingArea = parseInt(get(/"livingArea":(\d+)/) || '0');
+  const yearBuilt = parseInt(get(/"yearBuilt":(\d+)/) || '0');
+
+  const address = [streetAddress, city, state, zipcode].filter(Boolean).join(', ');
+  const taxRate = (price > 0 && taxAnnual > 0) ? (taxAnnual / price * 100) : 0;
+  const estInsurance = price > 0 ? Math.round(price * 0.0035 / 12) : 220;
+
+  const isMultiFamily = /multi.?family|triplex|duplex|fourplex|tri-plex|quad/i.test(homeType + ' ' + description);
+
+  let units = [];
+  if (isMultiFamily) {
+    units = parseUnitsFromDescription(description, bedrooms, rentZestimate);
+  }
+  if (units.length === 0 && rentZestimate > 0) {
+    units = [{ name: `Full Property (${bedrooms}bd/${bathrooms}ba)`, rent: rentZestimate }];
+  }
+  if (units.length === 0) {
+    units = [{ name: `Unit 1`, rent: 0 }];
+  }
+
+  return {
+    price, rentZestimate, bedrooms, bathrooms, taxRate, taxAnnual,
+    homeType, address, description, livingArea, yearBuilt,
+    estInsurance, isMultiFamily, units
+  };
+}
+
+function parseUnitsFromDescription(desc, totalBeds, rentZestimate) {
+  const units = [];
+
+  // Try to find total rent mentioned in description
+  const totalRentMatch = desc.match(/total\s+(?:of\s+)?\$(\d[\d,]*)/);
+  const totalRent = totalRentMatch ? parseInt(totalRentMatch[1].replace(/,/g, '')) : rentZestimate;
+
+  // Find unit descriptions: "3bed 2bath", "2bed/1bath", "studio"
+  const unitDescs = [];
+  const bedBathRegex = /(\d+)\s*bed(?:room)?s?\s*[\/, ]*?(\d+)\s*bath/gi;
+  let m;
+  while ((m = bedBathRegex.exec(desc)) !== null) {
+    unitDescs.push({ beds: parseInt(m[1]), baths: parseInt(m[2]) });
+  }
+  if (/studio/i.test(desc)) {
+    unitDescs.push({ beds: 0, baths: 1, isStudio: true });
+  }
+
+  if (unitDescs.length > 1 && totalRent > 0) {
+    // Distribute rent proportionally by bedroom count
+    const totalBedEquiv = unitDescs.reduce((s, u) => s + (u.isStudio ? 0.5 : u.beds), 0);
+    for (const u of unitDescs) {
+      const bedEquiv = u.isStudio ? 0.5 : u.beds;
+      const estRent = Math.round(totalRent * (bedEquiv / totalBedEquiv) / 50) * 50;
+      const name = u.isStudio ? 'Studio' : `${u.beds}bed/${u.baths}bath`;
+      units.push({ name, rent: estRent });
+    }
+  } else if (totalRent > 0) {
+    // Couldn't parse individual units, use total
+    units.push({ name: 'All Units (adjust below)', rent: totalRent });
+  }
+
+  return units;
+}
+
+function populateFromZillow(info) {
+  if (info.price) document.getElementById('price').value = info.price;
+  if (info.taxRate > 0) document.getElementById('taxRate').value = info.taxRate.toFixed(2);
+  if (info.estInsurance) document.getElementById('insurance').value = info.estInsurance;
+
+  // Rebuild units
+  const container = document.getElementById('units-container');
+  container.innerHTML = '';
+  info.units.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'unit-row';
+    row.innerHTML = `
+      <div class="field"><label>Name</label><input type="text" class="unit-name" value="${u.name}"></div>
+      <div class="field"><label>Monthly Rent ($)</label><input type="number" class="unit-rent" value="${u.rent}" step="50"></div>
+      <button class="remove-btn" onclick="removeUnit(this)">✕</button>`;
+    container.appendChild(row);
+  });
+}
+
+function showPropertySummary(info) {
+  const el = document.getElementById('property-summary');
+  const details = [
+    info.address && `<strong>${info.address}</strong>`,
+    info.homeType && `Type: ${info.homeType.replace(/_/g, ' ')}`,
+    info.bedrooms && `${info.bedrooms} bed / ${info.bathrooms} bath`,
+    info.livingArea && `${info.livingArea.toLocaleString()} sq ft`,
+    info.yearBuilt && `Built ${info.yearBuilt}`,
+    info.price && `List: ${fmt(info.price)}`,
+    info.rentZestimate && `Rent Zestimate: ${fmt(info.rentZestimate)}/mo`,
+    info.taxAnnual && `Tax: ${fmt(info.taxAnnual)}/yr`,
+  ].filter(Boolean);
+
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:0.4rem 1.25rem;font-size:0.8rem;color:var(--muted);padding:0.75rem;background:var(--bg);border-radius:4px">
+    ${details.map(d => `<span>${d}</span>`).join('')}
+  </div>`;
+  el.style.display = 'block';
+}
+
+function showImportStatus(msg, type) {
+  const el = document.getElementById('import-status');
+  const colors = { success: 'var(--green)', error: 'var(--red)', warn: 'var(--yellow)', loading: 'var(--muted)' };
+  el.style.color = colors[type] || 'var(--muted)';
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
 // ── Unit Management ──
 function addUnit() {
   const container = document.getElementById('units-container');
