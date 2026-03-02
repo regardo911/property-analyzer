@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rental Property Cash Flow Analyzer</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --card: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --muted: #888;
+    --accent: #4fc3f7;
+    --green: #66bb6a;
+    --red: #ef5350;
+    --yellow: #ffd54f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 {
+    font-size: 1.5rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 {
+    font-size: 1rem;
+    color: var(--accent);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1.5rem;
+  }
+  @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+  .field { display: flex; flex-direction: column; }
+  .field label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .field input, .field select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .units-section { margin-top: 1rem; }
+  .unit-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: end;
+    margin-bottom: 0.5rem;
+  }
+  .unit-row .field { flex: 1; }
+  .unit-row .remove-btn {
+    background: none;
+    border: 1px solid var(--red);
+    color: var(--red);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    margin-bottom: 1px;
+  }
+  .unit-row .remove-btn:hover { background: rgba(239,83,80,0.15); }
+  .add-unit-btn {
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.4rem 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+  }
+  .add-unit-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .analyze-btn {
+    display: block;
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .analyze-btn:hover { opacity: 0.9; }
+
+  /* Results */
+  #results { display: none; }
+  .scenario {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .scenario h3 {
+    font-size: 1rem;
+    color: var(--yellow);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .result-section { margin-bottom: 1rem; }
+  .result-section h4 {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.4rem;
+  }
+  .result-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0;
+    font-size: 0.85rem;
+  }
+  .result-row .label { color: var(--text); }
+  .result-row .value { font-weight: bold; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .metric-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+    font-weight: bold;
+  }
+  .pass { background: rgba(102,187,106,0.2); color: var(--green); }
+  .fail { background: rgba(239,83,80,0.2); color: var(--red); }
+  .highlight-row {
+    background: rgba(79,195,247,0.08);
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    margin: 0.25rem -0.5rem;
+  }
+  .house-hack-select {
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .house-hack-select label {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .hack-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+  }
+  .hack-btn:hover { border-color: var(--accent); }
+  .hack-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(79,195,247,0.1); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>$ property_analyzer</h1>
+  <p class="subtitle">Rental property cash flow analysis — escape the matrix edition 🏠</p>
+
+  <div class="card">
+    <h2>Property Details</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label>Purchase Price ($)</label>
+        <input type="number" id="price" value="1000000" step="1000">
+      </div>
+      <div class="field">
+        <label>Down Payment ($)</label>
+        <input type="number" id="down" value="200000" step="1000">
+      </div>
+      <div class="field">
+        <label>Interest Rate (%)</label>
+        <input type="number" id="rate" value="7.0" step="0.125">
+      </div>
+      <div class="field">
+        <label>Loan Term (years)</label>
+        <select id="term">
+          <option value="15">15</option>
+          <option value="30" selected>30</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Property Tax Rate (%)</label>
+        <input type="number" id="taxRate" value="1.15" step="0.05">
+      </div>
+      <div class="field">
+        <label>Monthly Insurance ($)</label>
+        <input type="number" id="insurance" value="220" step="10">
+      </div>
+      <div class="field">
+        <label>Vacancy Reserve (%)</label>
+        <input type="number" id="vacancy" value="5.0" step="0.5">
+      </div>
+      <div class="field">
+        <label>Maintenance/CapEx (%)</label>
+        <input type="number" id="maintenance" value="7.5" step="0.5">
+      </div>
+      <div class="field">
+        <label>Property Mgmt Fee (%)</label>
+        <input type="number" id="mgmt" value="0" step="1">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Units</h2>
+    <div id="units-container">
+      <div class="unit-row" data-idx="0">
+        <div class="field"><label>Name</label><input type="text" class="unit-name" value="3bed/2bath Upstairs"></div>
+        <div class="field"><label>Monthly Rent ($)</label><input type="number" class="unit-rent" value="2800" step="50"></div>
+        <button class="remove-btn" onclick="removeUnit(this)">✕</button>
+      </div>
+      <div class="unit-row" data-idx="1">
+        <div class="field"><label>Name</label><input type="text" class="unit-name" value="2bed/1bath Downstairs"></div>
+        <div class="field"><label>Monthly Rent ($)</label><input type="number" class="unit-rent" value="2200" step="50"></div>
+        <button class="remove-btn" onclick="removeUnit(this)">✕</button>
+      </div>
+      <div class="unit-row" data-idx="2">
+        <div class="field"><label>Name</label><input type="text" class="unit-name" value="Studio Downstairs"></div>
+        <div class="field"><label>Monthly Rent ($)</label><input type="number" class="unit-rent" value="1400" step="50"></div>
+        <button class="remove-btn" onclick="removeUnit(this)">✕</button>
+      </div>
+    </div>
+    <button class="add-unit-btn" onclick="addUnit()">+ Add Unit</button>
+  </div>
+
+  <button class="analyze-btn" onclick="analyze()">Analyze Property</button>
+
+  <div id="results"></div>
+</div>
+
+<script>
+// ── Unit Management ──
+function addUnit() {
+  const container = document.getElementById('units-container');
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.className = 'unit-row';
+  row.innerHTML = `
+    <div class="field"><label>Name</label><input type="text" class="unit-name" value="Unit ${idx + 1}"></div>
+    <div class="field"><label>Monthly Rent ($)</label><input type="number" class="unit-rent" value="0" step="50"></div>
+    <button class="remove-btn" onclick="removeUnit(this)">✕</button>`;
+  container.appendChild(row);
+}
+
+function removeUnit(btn) {
+  const container = document.getElementById('units-container');
+  if (container.children.length > 1) btn.parentElement.remove();
+}
+
+function getUnits() {
+  const rows = document.querySelectorAll('.unit-row');
+  return Array.from(rows).map(r => ({
+    name: r.querySelector('.unit-name').value,
+    rent: parseFloat(r.querySelector('.unit-rent').value) || 0
+  }));
+}
+
+// ── Calculations ──
+function monthlyPI(loan, annualRate, years) {
+  if (loan <= 0) return 0;
+  const r = annualRate / 100 / 12;
+  const n = years * 12;
+  if (r === 0) return loan / n;
+  return loan * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+}
+
+function runScenario(prop, rentedUnits, label, occupiedUnit) {
+  const loan = prop.price - prop.down;
+  const pi = monthlyPI(loan, prop.rate, prop.term);
+  const taxes = prop.price * (prop.taxRate / 100) / 12;
+  const gross = rentedUnits.reduce((s, u) => s + u.rent, 0);
+
+  const vacancy = gross * (prop.vacancyPct / 100);
+  const maint = gross * (prop.maintPct / 100);
+  const mgmt = gross * (prop.mgmtPct / 100);
+
+  const noi = gross - vacancy - maint - mgmt - taxes - prop.insurance;
+  const piti = pi + taxes + prop.insurance;
+  const cashFlow = noi - pi;
+
+  const coc = prop.down > 0 ? (cashFlow * 12 / prop.down * 100) : 0;
+  const totalRent = prop.units.reduce((s, u) => s + u.rent, 0);
+  const onePct = prop.price > 0 ? (totalRent / prop.price * 100) : 0;
+  const dscr = pi > 0 ? noi / pi : Infinity;
+
+  let effective = null;
+  if (occupiedUnit) {
+    effective = piti + vacancy + maint + mgmt - gross;
+  }
+
+  return {
+    label, gross, vacancy, maint, mgmt, taxes, insurance: prop.insurance,
+    noi, pi, piti, cashFlow, coc, onePct, dscr, effective
+  };
+}
+
+function breakevenDown(prop, rentedUnits) {
+  const gross = rentedUnits.reduce((s, u) => s + u.rent, 0);
+  const taxes = prop.price * (prop.taxRate / 100) / 12;
+  const vacancy = gross * (prop.vacancyPct / 100);
+  const maint = gross * (prop.maintPct / 100);
+  const mgmt = gross * (prop.mgmtPct / 100);
+
+  const targetPI = gross - vacancy - maint - mgmt - taxes - prop.insurance;
+  if (targetPI <= 0) return prop.price;
+
+  const r = prop.rate / 100 / 12;
+  const n = prop.term * 12;
+  let maxLoan;
+  if (r === 0) { maxLoan = targetPI * n; }
+  else { maxLoan = targetPI * (Math.pow(1 + r, n) - 1) / (r * Math.pow(1 + r, n)); }
+
+  return Math.max(0, prop.price - maxLoan);
+}
+
+// ── Formatting ──
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const pct = v => v.toFixed(1) + '%';
+const badge = (pass) => `<span class="metric-badge ${pass ? 'pass' : 'fail'}">${pass ? '✓ PASS' : '✗ FAIL'}</span>`;
+const valClass = v => v >= 0 ? 'positive' : 'negative';
+
+function renderScenario(res, prop, rentedUnits) {
+  const be = breakevenDown(prop, rentedUnits);
+  return `
+    <div class="scenario">
+      <h3>${res.label}</h3>
+      <div class="result-section">
+        <h4>Loan Details</h4>
+        <div class="result-row"><span class="label">Purchase Price</span><span class="value">${fmt(prop.price)}</span></div>
+        <div class="result-row"><span class="label">Down Payment</span><span class="value">${fmt(prop.down)} (${(prop.down/prop.price*100).toFixed(1)}%)</span></div>
+        <div class="result-row"><span class="label">Loan Amount</span><span class="value">${fmt(prop.price - prop.down)}</span></div>
+        <div class="result-row"><span class="label">Rate / Term</span><span class="value">${prop.rate.toFixed(2)}% / ${prop.term}yr</span></div>
+      </div>
+      <div class="result-section">
+        <h4>Monthly Income</h4>
+        <div class="result-row"><span class="label">Gross Rent</span><span class="value">${fmt(res.gross)}</span></div>
+      </div>
+      <div class="result-section">
+        <h4>Monthly Expenses</h4>
+        <div class="result-row"><span class="label">Principal & Interest</span><span class="value">${fmt(res.pi)}</span></div>
+        <div class="result-row"><span class="label">Property Taxes</span><span class="value">${fmt(res.taxes)}</span></div>
+        <div class="result-row"><span class="label">Insurance</span><span class="value">${fmt(res.insurance)}</span></div>
+        <div class="result-row"><span class="label">Vacancy (${pct(prop.vacancyPct)})</span><span class="value">${fmt(res.vacancy)}</span></div>
+        <div class="result-row"><span class="label">Maintenance (${pct(prop.maintPct)})</span><span class="value">${fmt(res.maint)}</span></div>
+        ${prop.mgmtPct > 0 ? `<div class="result-row"><span class="label">Management (${pct(prop.mgmtPct)})</span><span class="value">${fmt(res.mgmt)}</span></div>` : ''}
+        <div class="result-row" style="border-top:1px solid var(--border);padding-top:0.3rem;margin-top:0.3rem"><span class="label">PITI</span><span class="value">${fmt(res.piti)}</span></div>
+      </div>
+      <div class="result-section">
+        <h4>Cash Flow</h4>
+        <div class="result-row"><span class="label">Net Operating Income</span><span class="value">${fmt(res.noi)}</span></div>
+        <div class="result-row highlight-row"><span class="label">Monthly Cash Flow</span><span class="value ${valClass(res.cashFlow)}">${fmt(res.cashFlow)}</span></div>
+        <div class="result-row"><span class="label">Annual Cash Flow</span><span class="value ${valClass(res.cashFlow)}">${fmt(res.cashFlow * 12)}</span></div>
+      </div>
+      ${res.effective !== null ? `
+      <div class="result-section">
+        <h4>House Hack</h4>
+        <div class="result-row highlight-row"><span class="label">Your Effective Housing Cost</span><span class="value">${fmt(res.effective)}/mo</span></div>
+      </div>` : ''}
+      <div class="result-section">
+        <h4>Key Metrics</h4>
+        <div class="result-row"><span class="label">Cash-on-Cash Return</span><span class="value ${valClass(res.coc)}">${pct(res.coc)}</span></div>
+        <div class="result-row"><span class="label">1% Rule (${pct(res.onePct)})</span><span>${badge(res.onePct >= 1.0)}</span></div>
+        <div class="result-row"><span class="label">DSCR (${res.dscr === Infinity ? '∞' : res.dscr.toFixed(2)})</span><span>${badge(res.dscr >= 1.0)}</span></div>
+        <div class="result-row"><span class="label">Break-Even Down Payment</span><span class="value">${fmt(be)}</span></div>
+      </div>
+    </div>`;
+}
+
+// ── Main ──
+let currentProp = null;
+
+function analyze() {
+  const units = getUnits();
+  const prop = {
+    price: parseFloat(document.getElementById('price').value) || 0,
+    down: parseFloat(document.getElementById('down').value) || 0,
+    rate: parseFloat(document.getElementById('rate').value) || 7,
+    term: parseInt(document.getElementById('term').value) || 30,
+    taxRate: parseFloat(document.getElementById('taxRate').value) || 1.15,
+    insurance: parseFloat(document.getElementById('insurance').value) || 0,
+    vacancyPct: parseFloat(document.getElementById('vacancy').value) || 5,
+    maintPct: parseFloat(document.getElementById('maintenance').value) || 7.5,
+    mgmtPct: parseFloat(document.getElementById('mgmt').value) || 0,
+    units
+  };
+  currentProp = prop;
+
+  const full = runScenario(prop, units, 'Full Rental (all units rented)', null);
+  let html = renderScenario(full, prop, units);
+
+  if (units.length > 1) {
+    html += `<div class="card"><h2>House Hack Analysis</h2>
+      <div class="house-hack-select">
+        <label>I'll live in:</label>
+        ${units.map((u, i) => `<button class="hack-btn" onclick="showHack(${i})">${u.name} (${fmt(u.rent)})</button>`).join('')}
+      </div>
+      <div id="hack-result"></div>
+    </div>`;
+  }
+
+  const el = document.getElementById('results');
+  el.innerHTML = html;
+  el.style.display = 'block';
+  el.scrollIntoView({ behavior: 'smooth' });
+}
+
+function showHack(idx) {
+  const prop = currentProp;
+  const occupied = prop.units[idx];
+  const rented = prop.units.filter((_, i) => i !== idx);
+
+  document.querySelectorAll('.hack-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+
+  const res = runScenario(prop, rented, `House Hack — you live in: ${occupied.name}`, occupied);
+  document.getElementById('hack-result').innerHTML = renderScenario(res, prop, rented);
+}
+</script>
+</body>
+</html>
